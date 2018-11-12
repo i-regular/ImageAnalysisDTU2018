@@ -1,8 +1,10 @@
+
+
 close all
 clear all
 
 %% Sign number
-nSign1 = 5;
+nSign1 = 1;
 
 %% Image Name
 ImageName = sprintf('DTUSignPhotos/DTUSigns%03d.jpg', nSign1);
@@ -10,36 +12,77 @@ ImageName = sprintf('DTUSignPhotos/DTUSigns%03d.jpg', nSign1);
 %% Loading in image
 I = imread(ImageName);
 
-%% Red, green & blue channels
-redChannel = I(:, :, 1); % Call imshow(redChannel) if you want to see it.
-greenChannel = I(:, :, 2);
-blueChannel = I(:, :, 3);
-
-Ired = redChannel;
-Igreen = greenChannel;
-Iblue = blueChannel;
-%% Thresholding - Inspect picture to decide thresshold
-BI = Ired > 105 & Ired < 235  & Igreen > 26 & Igreen < 117 & Iblue > 25 & Iblue < 129 & (abs(Iblue - Igreen) < 20);
-%% Filling out holes in image
-BF = imfill(BI, 'holes');
-
-%% Connecting components
-[ImageConnected1, CON1] = bwlabel(BF);
-[ImageConnected2, CON2] = bwlabel(BF);
 
 %%
-%stats = [regionprops(ImageConnected1); regionprops(not(ImageConnected1))]
-% show the image and draw the detected rectangles on it
+r = I(:, :, 1);
+g = I(:, :, 2);
+b = I(:, :, 3);
+
+%% Enhance Truecolor composite with a contrast stretch
+
+
+%% Enhance Truecolor Composite  with a Decorrelation stretch 
+decorrstretched_truecolor = decorrstretch(I, 'Tol', 0.01);
 figure
-imshow(ImageConnected1); 
+imshow(decorrstretched_truecolor)
+title('Truecolor composite after Decorrelation Stretch')
 
-%% Creating Kernel 
-% Designing kernels/structural elements
-se1 = strel('square',9);
-se2 = strel('square',5);      %Husk at en 3x3 disk har indekset 1 i koden.
+%% Showing scatter plot for decorrstretched
+r = decorrstretched_truecolor(:,:,1);
+g = decorrstretched_truecolor(:,:,2);
+b = decorrstretched_truecolor(:,:,3);
 
-NewImage1 = mopen(ImageConnected1,se1);
-NewImage1 = mclose(NewImage1,se2);
+%% lABEL Image
+IB = r > 189 & g < 5 & b < 180 ;
+labeledImage = IB;
+
+%% Filling out holes in image
+BF = imfill(IB, 'holes');
+imshow(BF)
+
+
+%% Thresholding Intensity Space
+se1 = strel('disk',3);
+se2 = strel('disk',3);      %Husk at en 3x3 disk har indekset 1 i koden.
+
+BF = bwareaopen(BF,1187);
+BF = imfill(BF,'holes');
+BF = imclearborder(BF,8);
+NewImage3 = BF;
+
+%% Thresholding on Normalized Image feature
+BinaryI = my_threshold(I,[120,256;37,80;37,80]);
+figure()
+imshow(BinaryI)
+title('Type = Normalized')
+
+BinaryI = bwareaopen(BinaryI,1187);
+BinaryI = imfill(BinaryI,'holes');
+BinaryI = imclearborder(BinaryI,8);
+
+%% Closeing with line kernel
+se1 = strel('line',8,0);
+se2 = strel('line',8,0);
+
+NormalizedI = mclose(BinaryI,se1);
+IntensityI  = mclose(NewImage3,se1);
+
+%% Filling holes
+NormalizedI = imfill(NormalizedI,'holes');
+IntensityI  = imfill(IntensityI,'holes');
+    
+%% Removing outliers
+se1 = strel('square',3);
+NormalizedI = imerode(NormalizedI,se1);
+IntensityI = imerode(IntensityI,se1);
+
+%% 
+sign=NormalizedI & IntensityI;
+NewImage1 = sign;
+
+figure 
+imshow(NewImage1);
+title("Thresholded image");
 
 %% Clearing borders
 BWnobord = imclearborder(NewImage1, 8);
@@ -48,7 +91,7 @@ figure, imshow(BWnobord), title('cleared border image');
 imwrite(BWnobord, 'BWnobord.png')
 
 %% remove small stuff
-BW_out = bwareaopen(BWnobord, 4000);
+BW_out = bwareaopen(BWnobord, 1000);
 
 [B,L,N] = bwboundaries(BW_out);
 
@@ -153,7 +196,16 @@ for i = 1:numBlobs
     % find out whether or not we should include the image based on my
     % magic numbers 
     % below wont work on big skilte
-    if( imperfectstats.Extent > 0.6 && ((statsideal.Area / imperfectstats.Area) > 0.9) && (statsideal.BoundingBox(3) > statsideal.BoundingBox(4)) && statsideal.BoundingBox(3)*2 >= statsideal.BoundingBox(4)) 
+    maxArea = max(statsideal.Area, imperfectstats.Area);
+    minArea = min(statsideal.Area, imperfectstats.Area);
+    width = statsideal.BoundingBox(3);
+    height = statsideal.BoundingBox(4);
+
+    disp(imperfectstats.Extent);
+    if(imperfectstats.Extent > 0.45 && ((minArea / maxArea) > 0.4) && width > (height * 2))
+        disp("hello world")
+        disp(maxArea);
+        disp(minArea);
         FINALBLOOBS{count} = imperfectBloob;
         count = count + 1;
         % show the shit
@@ -171,9 +223,36 @@ for i = 1:numBlobs
         Iz(:,:,1)=zr;
         Iz(:,:,2)=zb;
         Iz(:,:,3)=zg;
-        figure;
-        imshow(uint8(Iz))
-        title("I believe this shit is a sign");
+        rgbImage = uint8(Iz);
+        %figure
+        %imshow(rgbImage);
+        % 
+        hsvImage = rgb2hsv(rgbImage);
+        hImage = hsvImage(:, :, 1);
+        sImage = hsvImage(:, :, 2);
+        vImage = hsvImage(:, :, 3);
+        
+        rnew = rgbImage(:, :, 1);
+        gnew = rgbImage(:, :, 2);
+        bnew = rgbImage(:, :, 3);
+        GreyImage = gnew+bnew;
+        whiteImage = ImageThreshold(GreyImage,225);
+        % Now get white pixels.
+        %whitePixels = vImage > 0.7; % or whatever.
+        % Now get black pixels.
+        threshedImage = (rnew > 0) | (gnew > 0) | (bnew > 0);
+        allPixelscount = sum((threshedImage(:)));
+        allWhitePixelcount = sum(whiteImage(:));
+        disp("printing whitepixel pixel count and all count");
+        disp(allWhitePixelcount);
+        disp(allPixelscount);
+        whitetotalratio = ((allWhitePixelcount / (allPixelscount)) * 100)
+        disp(whitetotalratio);
+        if(allWhitePixelcount > 30)
+           figure;
+           imshow(rgbImage)
+           title("I believe this shit is a sign");
+        end
     end
 end
 
